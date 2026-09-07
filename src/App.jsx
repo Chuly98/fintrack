@@ -4,6 +4,16 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsToolti
 const API_KEY = import.meta.env.VITE_FINNHUB_API_KEY;
 
 function App() {
+  // --- ESTADOS DE AUTENTICACIÓN ---
+  const [usuarioActual, setUsuarioActual] = useState(() => {
+    const sesion = localStorage.getItem('finTrackSesionActiva');
+    return sesion ? JSON.parse(sesion) : null;
+  });
+
+  const [modoAuth, setModoAuth] = useState('login'); // 'login' o 'register'
+  const [formAuth, setFormAuth] = useState({ nombre: '', email: '', password: '' });
+  const [errorAuth, setErrorAuth] = useState('');
+
   const [tabActiva, setTabActiva] = useState('simulador');
   const [cargandoPrecios, setCargandoPrecios] = useState(false);
 
@@ -67,7 +77,50 @@ function App() {
     setMostrarTabla(false);
   };
 
-  // --- ESTADOS DEL PORTAFOLIO ---
+  // --- GESTIÓN DE USUARIOS Y REGISTRO ---
+  const handleRegistroSubmit = (e) => {
+    e.preventDefault();
+    setErrorAuth('');
+    const usuariosRegistrados = JSON.parse(localStorage.getItem('finTrackUsuarios') || '[]');
+
+    const existe = usuariosRegistrados.find(u => u.email === formAuth.email);
+    if (existe) {
+      setErrorAuth('Este correo ya está registrado.');
+      return;
+    }
+
+    const nuevoUsuario = { nombre: formAuth.nombre, email: formAuth.email, password: formAuth.password };
+    usuariosRegistrados.push(nuevoUsuario);
+    localStorage.setItem('finTrackUsuarios', JSON.stringify(usuariosRegistrados));
+
+    // Iniciar sesión directo
+    localStorage.setItem('finTrackSesionActiva', JSON.stringify(nuevoUsuario));
+    setUsuarioActual(nuevoUsuario);
+    setFormAuth({ nombre: '', email: '', password: '' });
+  };
+
+  const handleLoginSubmit = (e) => {
+    e.preventDefault();
+    setErrorAuth('');
+    const usuariosRegistrados = JSON.parse(localStorage.getItem('finTrackUsuarios') || '[]');
+
+    const usuarioEncontrado = usuariosRegistrados.find(u => u.email === formAuth.email && u.password === formAuth.password);
+    if (!usuarioEncontrado) {
+      setErrorAuth('Correo o contraseña incorrectos.');
+      return;
+    }
+
+    localStorage.setItem('finTrackSesionActiva', JSON.stringify(usuarioEncontrado));
+    setUsuarioActual(usuarioEncontrado);
+    setFormAuth({ nombre: '', email: '', password: '' });
+  };
+
+  const handleCerrarSesion = () => {
+    localStorage.removeItem('finTrackSesionActiva');
+    setUsuarioActual(null);
+  };
+
+  // --- ESTADOS DEL PORTAFOLIO (Dependientes del usuario actual para aislar carteras si se desea) ---
   const [posiciones, setPosiciones] = useState(() => {
     const datosGuardados = localStorage.getItem('finTrackPortafolio');
     return datosGuardados ? JSON.parse(datosGuardados) : [];
@@ -97,11 +150,12 @@ function App() {
   };
 
   useEffect(() => {
+    if (!usuarioActual) return;
     actualizarPreciosDesdeBolsa();
     const temporizador = setInterval(() => actualizarPreciosDesdeBolsa(), 30000);
     return () => clearInterval(temporizador);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [posiciones.length]);
+  }, [posiciones.length, usuarioActual]);
 
   const handleAgregarActivo = (e) => {
     e.preventDefault();
@@ -135,6 +189,65 @@ function App() {
   const coloresTipo = { 'Acción': '#3b82f6', 'ETF': '#22c55e', 'Renta Fija': '#f59e0b', 'Cripto': '#a855f7' };
   const datosDistribucion = Object.keys(distribucionMap).filter(k => distribucionMap[k] > 0).map(k => ({ name: k, value: Math.round(distribucionMap[k]), color: coloresTipo[k] }));
 
+  // --- SI NO HAY SESIÓN ACTIVA, MOSTRAR PANTALLA DE LOGIN / REGISTRO ---
+  if (!usuarioActual) {
+    return (
+      <div className="min-h-screen bg-[#121212] font-sans text-white flex items-center justify-center p-4">
+        <div className="bg-[#1E1E1E] border border-gray-800 rounded-3xl shadow-2xl w-full max-w-md p-8 animate-fade-in">
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-12 h-12 bg-green-500 rounded-2xl flex items-center justify-center mb-3 shadow-[0_0_20px_rgba(34,197,94,0.4)]">
+              <span className="text-white font-bold text-2xl">F</span>
+            </div>
+            <h1 className="text-2xl font-bold tracking-wide">Fin<span className="text-green-400">Track</span></h1>
+            <p className="text-gray-400 text-sm mt-1">Plataforma de gestión financiera e inversión</p>
+          </div>
+
+          <div className="flex bg-[#121212] p-1 rounded-xl mb-6 border border-gray-800">
+            <button onClick={() => { setModoAuth('login'); setErrorAuth(''); }} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${modoAuth === 'login' ? 'bg-green-500 text-[#121212]' : 'text-gray-400 hover:text-white'}`}>Iniciar Sesión</button>
+            <button onClick={() => { setModoAuth('register'); setErrorAuth(''); }} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${modoAuth === 'register' ? 'bg-green-500 text-[#121212]' : 'text-gray-400 hover:text-white'}`}>Registrarse</button>
+          </div>
+
+          {errorAuth && <div className="bg-red-500/10 border border-red-500/50 text-red-400 text-xs p-3 rounded-xl mb-4 text-center">{errorAuth}</div>}
+
+          {modoAuth === 'login' ? (
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Correo Electrónico</label>
+                <input required type="email" value={formAuth.email} onChange={(e) => setFormAuth({ ...formAuth, email: e.target.value })} className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500" placeholder="tucorreo@example.com" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Contraseña</label>
+                <input required type="password" value={formAuth.password} onChange={(e) => setFormAuth({ ...formAuth, password: e.target.value })} className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500" placeholder="••••••••" />
+              </div>
+              <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-[#121212] font-bold py-3 rounded-xl transition-colors shadow-[0_0_15px_rgba(34,197,94,0.3)] mt-2">
+                Ingresar a FinTrack
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleRegistroSubmit} className="space-y-4">
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Nombre Completo</label>
+                <input required type="text" value={formAuth.nombre} onChange={(e) => setFormAuth({ ...formAuth, nombre: e.target.value })} className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500" placeholder="Juan Pérez" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Correo Electrónico</label>
+                <input required type="email" value={formAuth.email} onChange={(e) => setFormAuth({ ...formAuth, email: e.target.value })} className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500" placeholder="tucorreo@example.com" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Contraseña</label>
+                <input required type="password" value={formAuth.password} onChange={(e) => setFormAuth({ ...formAuth, password: e.target.value })} className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500" placeholder="••••••••" />
+              </div>
+              <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-[#121212] font-bold py-3 rounded-xl transition-colors shadow-[0_0_15px_rgba(34,197,94,0.3)] mt-2">
+                Crear Cuenta Gratis
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // --- INTERFAZ PRINCIPAL (CUANDO YA ESTÁ LOGUEADO) ---
   return (
     <div className="min-h-screen bg-[#121212] font-sans text-white">
       {/* NAVEGACIÓN */}
@@ -150,9 +263,15 @@ function App() {
             <button onClick={() => setTabActiva('simulador')} className={`font-medium transition-colors ${tabActiva === 'simulador' ? 'text-green-400 border-b-2 border-green-400 pb-1' : 'text-gray-400 hover:text-white'}`}>Simulador</button>
             <button onClick={() => setTabActiva('portafolio')} className={`font-medium transition-colors ${tabActiva === 'portafolio' ? 'text-green-400 border-b-2 border-green-400 pb-1' : 'text-gray-400 hover:text-white'}`}>Mi Portafolio</button>
           </div>
-          <div className="flex items-center space-x-6">
-            <button className="w-9 h-9 bg-gray-800 rounded-full flex items-center justify-center border border-gray-700 hover:border-gray-500 transition-colors">
-              <span className="text-gray-300 text-sm">👤</span>
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 bg-[#1E1E1E] border border-gray-800 py-1.5 px-3 rounded-full">
+              <span className="w-7 h-7 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center text-xs font-bold">
+                {usuarioActual.nombre.charAt(0).toUpperCase()}
+              </span>
+              <span className="text-xs font-medium text-gray-300 hidden sm:inline">{usuarioActual.nombre}</span>
+            </div>
+            <button onClick={handleCerrarSesion} title="Cerrar Sesión" className="bg-gray-800 hover:bg-red-500/20 hover:text-red-400 text-gray-400 p-2 rounded-xl border border-gray-700 transition-colors text-xs font-semibold">
+              🚪 Salir
             </button>
           </div>
         </div>
