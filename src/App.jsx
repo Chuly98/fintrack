@@ -1,57 +1,84 @@
 import React, { useState, useEffect } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 
 const API_KEY = import.meta.env.VITE_FINNHUB_API_KEY;
 
 function App() {
-  const [tabActiva, setTabActiva] = useState('portafolio');
+  const [tabActiva, setTabActiva] = useState('simulador');
   const [cargandoPrecios, setCargandoPrecios] = useState(false);
 
   // --- ESTADOS DEL SIMULADOR ---
-  const [capitalInicial, setCapitalInicial] = useState(1000);
-  const [aporteMensual, setAporteMensual] = useState(200);
-  const [anios, setAnios] = useState(10);
-  const [instrumento, setInstrumento] = useState('0.10');
+  const [simInicial, setSimInicial] = useState(1000);
+  const [simMensual, setSimMensual] = useState(200);
+  const [simAnios, setSimAnios] = useState(10);
+  const [simTasa, setSimTasa] = useState(10);
+  const [simVarianza, setSimVarianza] = useState('');
+  const [simFrecuencia, setSimFrecuencia] = useState(12);
+  const [simResultados, setSimResultados] = useState(null);
+  const [mostrarTabla, setMostrarTabla] = useState(false);
 
-  const calcularProyeccion = () => {
-    let tasaAnual = parseFloat(instrumento);
-    let tasaMensual = tasaAnual / 12;
+  const handleCalcular = (e) => {
+    if (e) e.preventDefault();
     let datos = [];
-    let capitalAcumulado = capitalInicial;
-    let totalInvertido = capitalInicial;
-    datos.push({ year: 'Año 0', invertido: Math.round(totalInvertido), total: Math.round(capitalAcumulado) });
-    for (let i = 1; i <= anios; i++) {
-      for (let m = 0; m < 12; m++) {
-        capitalAcumulado = (capitalAcumulado + aporteMensual) * (1 + tasaMensual);
-        totalInvertido += aporteMensual;
-      }
-      datos.push({ year: `Año ${i}`, invertido: Math.round(totalInvertido), total: Math.round(capitalAcumulado) });
-    }
-    return { datosGrafico: datos, finalInvertido: Math.round(totalInvertido), finalTotal: Math.round(capitalAcumulado), finalGanancia: Math.round(capitalAcumulado - totalInvertido) };
-  };
-  const resultado = calcularProyeccion();
+    let capital = parseFloat(simInicial) || 0;
+    let aporte = parseFloat(simMensual) || 0;
+    let tasa = parseFloat(simTasa) || 0;
+    let varz = parseFloat(simVarianza) || 0;
+    let n = parseInt(simFrecuencia) || 1;
+    let anios = parseInt(simAnios) || 10;
 
-  // --- ESTADOS DEL PORTAFOLIO (CON LOCALSTORAGE) ---
+    let rExp = tasa / 100;
+    let rOpt = (tasa + varz) / 100;
+    let rPes = (tasa - varz) / 100;
+
+    datos.push({ year: 'Año 0', aportes: capital, esperado: capital, optimista: capital, pesimista: capital });
+
+    for (let y = 1; y <= anios; y++) {
+      let aportesTotales = capital + (aporte * 12 * y);
+
+      const calcFV = (r, n_freq) => {
+        if (r === 0) return aportesTotales;
+        let fvPrincipal = capital * Math.pow(1 + r / n_freq, y * n_freq);
+        let pmt_period = (n_freq === 1) ? (aporte * 12) : (n_freq === 12 ? aporte : aporte * (12 / n_freq));
+        let fvAportes = pmt_period * ((Math.pow(1 + r / n_freq, y * n_freq) - 1) / (r / n_freq));
+        return fvPrincipal + fvAportes;
+      };
+
+      datos.push({
+        year: `Año ${y}`,
+        aportes: Math.round(aportesTotales),
+        esperado: Math.round(calcFV(rExp, n)),
+        optimista: varz > 0 ? Math.round(calcFV(rOpt, n)) : null,
+        pesimista: varz > 0 ? Math.round(calcFV(rPes, n)) : null
+      });
+    }
+    setSimResultados(datos);
+    setMostrarTabla(false);
+  };
+
+  const handleRestablecer = () => {
+    setSimInicial(1000);
+    setSimMensual(200);
+    setSimAnios(10);
+    setSimTasa(10);
+    setSimVarianza('');
+    setSimFrecuencia(12);
+    setSimResultados(null);
+    setMostrarTabla(false);
+  };
+
+  // --- ESTADOS DEL PORTAFOLIO ---
   const [posiciones, setPosiciones] = useState(() => {
     const datosGuardados = localStorage.getItem('finTrackPortafolio');
-    if (datosGuardados) {
-      return JSON.parse(datosGuardados);
-    }
-    return []; // Inicia vacío para que el usuario agregue lo que quiera
+    return datosGuardados ? JSON.parse(datosGuardados) : [];
   });
-
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [nuevoActivo, setNuevoActivo] = useState({ ticker: '', nombre: '', tipo: 'Acción', cant: '', precioCompra: '' });
 
-  // Guardado automático en la memoria del navegador
-  useEffect(() => {
-    localStorage.setItem('finTrackPortafolio', JSON.stringify(posiciones));
-  }, [posiciones]);
+  useEffect(() => { localStorage.setItem('finTrackPortafolio', JSON.stringify(posiciones)); }, [posiciones]);
 
-  // --- CONEXIÓN A FINNHUB API ---
   const actualizarPreciosDesdeBolsa = async () => {
     if (!API_KEY || posiciones.length === 0) return;
-
     setCargandoPrecios(true);
     try {
       const posicionesActualizadas = await Promise.all(
@@ -60,77 +87,57 @@ function App() {
           try {
             const respuesta = await fetch(`https://finnhub.io/api/v1/quote?symbol=${pos.ticker}&token=${API_KEY}`);
             const datos = await respuesta.json();
-            if (datos && datos.c && datos.c > 0) {
-              return { ...pos, precioActual: datos.c };
-            }
-          } catch (error) {
-            console.error(`Error consultando ${pos.ticker}:`, error);
-          }
+            if (datos && datos.c && datos.c > 0) return { ...pos, precioActual: datos.c };
+          } catch (error) { console.error(error); }
           return pos;
         })
       );
       setPosiciones(posicionesActualizadas);
-    } catch (error) {
-      console.error("Error general de API:", error);
-    } finally {
-      setCargandoPrecios(false);
-    }
+    } catch (error) { console.error(error); } finally { setCargandoPrecios(false); }
   };
 
-  // Actualización automática cada 30 segundos
   useEffect(() => {
     actualizarPreciosDesdeBolsa();
-    const temporizador = setInterval(() => {
-      actualizarPreciosDesdeBolsa();
-    }, 30000);
+    const temporizador = setInterval(() => actualizarPreciosDesdeBolsa(), 30000);
     return () => clearInterval(temporizador);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [posiciones.length]);
 
   const handleAgregarActivo = (e) => {
     e.preventDefault();
-    const activoFormateado = {
+    const activo = {
+      ...nuevoActivo,
       ticker: nuevoActivo.ticker.toUpperCase(),
       nombre: nuevoActivo.nombre || 'Nuevo Activo',
-      tipo: nuevoActivo.tipo,
       cant: parseFloat(nuevoActivo.cant),
       precioCompra: parseFloat(nuevoActivo.precioCompra),
       precioActual: parseFloat(nuevoActivo.precioCompra)
     };
-    setPosiciones([...posiciones, activoFormateado]);
+    setPosiciones([...posiciones, activo]);
     setIsModalOpen(false);
     setNuevoActivo({ ticker: '', nombre: '', tipo: 'Acción', cant: '', precioCompra: '' });
   };
 
-  const eliminarActivo = (tickerAEliminar) => {
-    const nuevasPosiciones = posiciones.filter(pos => pos.ticker !== tickerAEliminar);
-    setPosiciones(nuevasPosiciones);
-  };
+  const eliminarActivo = (ticker) => setPosiciones(posiciones.filter(p => p.ticker !== ticker));
 
-  // --- CÁLCULOS ---
-  let balanceTotal = 0;
-  let costoTotal = 0;
+  let balanceTotal = 0, costoTotal = 0;
   const distribucionMap = { 'Acción': 0, 'ETF': 0, 'Renta Fija': 0, 'Cripto': 0 };
 
   posiciones.forEach(pos => {
-    const valorActual = pos.cant * pos.precioActual;
-    const valorCompra = pos.cant * pos.precioCompra;
-    balanceTotal += valorActual;
-    costoTotal += valorCompra;
-    if (distribucionMap[pos.tipo] !== undefined) distribucionMap[pos.tipo] += valorActual;
+    const valor = pos.cant * pos.precioActual;
+    balanceTotal += valor;
+    costoTotal += pos.cant * pos.precioCompra;
+    if (distribucionMap[pos.tipo] !== undefined) distribucionMap[pos.tipo] += valor;
   });
 
   const rendimientoHistorico = balanceTotal - costoTotal;
   const porcentajeHistorico = costoTotal > 0 ? (rendimientoHistorico / costoTotal) * 100 : 0;
-
   const coloresTipo = { 'Acción': '#3b82f6', 'ETF': '#22c55e', 'Renta Fija': '#f59e0b', 'Cripto': '#a855f7' };
-  const datosDistribucion = Object.keys(distribucionMap).filter(key => distribucionMap[key] > 0).map(key => ({
-    name: key, value: Math.round(distribucionMap[key]), color: coloresTipo[key]
-  }));
+  const datosDistribucion = Object.keys(distribucionMap).filter(k => distribucionMap[k] > 0).map(k => ({ name: k, value: Math.round(distribucionMap[k]), color: coloresTipo[k] }));
 
   return (
     <div className="min-h-screen bg-[#121212] font-sans text-white">
-      {/* Navegación */}
+      {/* NAVEGACIÓN */}
       <nav className="bg-[#121212] border-b border-gray-800 px-6 py-4 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center cursor-pointer">
@@ -151,12 +158,169 @@ function App() {
         </div>
       </nav>
 
-      {/* Contenido */}
+      {/* CONTENIDO */}
       <main className="max-w-7xl mx-auto px-6 py-10 relative">
+
+        {/* === PESTAÑA: SIMULADOR === */}
         {tabActiva === 'simulador' && (
-          <div className="text-center mt-20"><h2 className="text-2xl text-green-400">Simulador activo. Ve a Mi Portafolio para ver tus inversiones.</h2></div>
+          <div className="max-w-4xl mx-auto animate-fade-in">
+            <div className="text-center mb-10">
+              <h1 className="text-3xl font-bold mb-3">Simulador de Interés Compuesto</h1>
+              <p className="text-gray-400 text-sm max-w-2xl mx-auto leading-relaxed">
+                Proyecta el crecimiento de tu patrimonio a largo plazo utilizando nuestra calculadora financiera avanzada.
+              </p>
+            </div>
+
+            <div className="bg-[#1E1E1E] border border-gray-800 rounded-2xl shadow-xl overflow-hidden">
+              <div className="px-6 py-3 text-xs font-semibold text-gray-400 bg-[#161616] border-b border-gray-800 flex justify-between items-center">
+                <span>CONFIGURACIÓN DE PARÁMETROS</span>
+                <span className="text-green-400 font-mono">* Campos obligatorios</span>
+              </div>
+
+              <form onSubmit={handleCalcular} className="p-6 space-y-6">
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center pb-6 border-b border-gray-800">
+                  <div>
+                    <label className="font-semibold text-white block mb-1 text-sm">Inversión inicial <span className="text-green-400">*</span></label>
+                    <span className="text-xs text-gray-400">Monto disponible para invertir inicialmente.</span>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-3 top-3 text-gray-400 font-bold">$</span>
+                    <input type="number" required min="0" value={simInicial} onChange={(e) => setSimInicial(e.target.value)} className="w-full bg-[#121212] border border-gray-700 rounded-xl pl-8 pr-4 py-2.5 text-white font-mono focus:outline-none focus:border-green-500 text-sm" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center pb-6 border-b border-gray-800">
+                  <div>
+                    <label className="font-semibold text-white block mb-1 text-sm">Contribución mensual</label>
+                    <span className="text-xs text-gray-400">Monto previsto a aportar al capital cada mes.</span>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-3 top-3 text-gray-400 font-bold">$</span>
+                    <input type="number" min="0" value={simMensual} onChange={(e) => setSimMensual(e.target.value)} className="w-full bg-[#121212] border border-gray-700 rounded-xl pl-8 pr-4 py-2.5 text-white font-mono focus:outline-none focus:border-green-500 text-sm" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center pb-6 border-b border-gray-800">
+                  <div>
+                    <label className="font-semibold text-white block mb-1 text-sm">Cantidad de tiempo en años <span className="text-green-400">*</span></label>
+                    <span className="text-xs text-gray-400">Plazo total previsto para la inversión.</span>
+                  </div>
+                  <div>
+                    <input type="number" required min="1" max="100" value={simAnios} onChange={(e) => setSimAnios(e.target.value)} className="w-full bg-[#121212] border border-gray-700 rounded-xl px-4 py-2.5 text-white font-mono focus:outline-none focus:border-green-500 text-sm" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center pb-6 border-b border-gray-800">
+                  <div>
+                    <label className="font-semibold text-white block mb-1 text-sm">Tasa de interés estimada <span className="text-green-400">*</span></label>
+                    <span className="text-xs text-gray-400">Tasa de rendimiento anual estimada (%).</span>
+                  </div>
+                  <div>
+                    <input type="number" required step="0.1" value={simTasa} onChange={(e) => setSimTasa(e.target.value)} className="w-full bg-[#121212] border border-gray-700 rounded-xl px-4 py-2.5 text-white font-mono focus:outline-none focus:border-green-500 text-sm" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center pb-6 border-b border-gray-800">
+                  <div>
+                    <label className="font-semibold text-white block mb-1 text-sm">Rango de varianza de tasas</label>
+                    <span className="text-xs text-gray-400">Margen de error (± %) para escenarios optimista/pesimista.</span>
+                  </div>
+                  <div>
+                    <input type="number" step="0.1" min="0" value={simVarianza} onChange={(e) => setSimVarianza(e.target.value)} placeholder="Ej: 2 (opcional)" className="w-full bg-[#121212] border border-gray-700 rounded-xl px-4 py-2.5 text-white font-mono focus:outline-none focus:border-green-500 text-sm placeholder:text-gray-600" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center pb-2">
+                  <div>
+                    <label className="font-semibold text-white block mb-1 text-sm">Frecuencia de capitalización</label>
+                    <span className="text-xs text-gray-400">Frecuencia con la que se reinvierte el interés.</span>
+                  </div>
+                  <div>
+                    <select value={simFrecuencia} onChange={(e) => setSimFrecuencia(e.target.value)} className="w-full bg-[#121212] border border-gray-700 text-white text-sm rounded-xl focus:outline-none focus:border-green-500 block p-2.5 font-sans">
+                      <option value="12">Mensualmente</option>
+                      <option value="2">Semestralmente</option>
+                      <option value="1">Anualmente</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-4 pt-6 border-t border-gray-800">
+                  <button type="button" onClick={handleRestablecer} className="bg-transparent hover:bg-gray-800 text-gray-300 font-semibold py-2.5 px-6 rounded-xl text-sm transition-colors border border-gray-700">
+                    Restablecer
+                  </button>
+                  <button type="submit" className="bg-green-500 hover:bg-green-600 text-[#121212] font-bold py-2.5 px-8 rounded-xl text-sm transition-colors shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+                    Calcular Proyección
+                  </button>
+                </div>
+              </form>
+
+              {simResultados && (
+                <div className="bg-[#161616] text-white p-6 md:p-8 animate-fade-in border-t border-gray-800">
+                  <div className="text-center mb-8">
+                    <h2 className="text-xl font-bold text-gray-300 mb-1">Resultados de la Simulación</h2>
+                    <p className="text-2xl md:text-3xl font-extrabold text-green-400">
+                      En {simAnios} años tendrás $ {simResultados[simResultados.length - 1].esperado.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+
+                  <div className="bg-[#1E1E1E] p-6 rounded-2xl border border-gray-800 shadow-inner">
+                    <h3 className="font-semibold mb-6 text-gray-300 text-sm">Crecimiento de Ahorros en el Tiempo</h3>
+                    <div className="w-full h-[350px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={simResultados} margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#333" />
+                          <XAxis dataKey="year" tick={{ fontSize: 11, fill: '#888' }} tickMargin={10} />
+                          <YAxis tick={{ fontSize: 11, fill: '#888' }} tickFormatter={(val) => `$${val >= 1000 ? val / 1000 + 'k' : val}`} />
+                          <RechartsTooltip contentStyle={{ backgroundColor: '#121212', borderColor: '#333', borderRadius: '8px', color: '#fff' }} formatter={(value) => [`$${value.toLocaleString('en-US')}`, '']} />
+                          <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '15px' }} />
+
+                          {simVarianza > 0 && <Line type="monotone" dataKey="optimista" name={`Optimista (+${simVarianza}%)`} stroke="#3b82f6" strokeWidth={2} dot={false} />}
+                          <Line type="monotone" dataKey="esperado" name={`Esperado (${simTasa}%)`} stroke="#22c55e" strokeWidth={3} dot={false} />
+                          {simVarianza > 0 && <Line type="monotone" dataKey="pesimista" name={`Pesimista (-${simVarianza}%)`} stroke="#ef4444" strokeWidth={2} dot={false} />}
+                          <Line type="monotone" dataKey="aportes" name="Capital Invertido" stroke="#9ca3af" strokeWidth={2} strokeDasharray="4 4" dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="text-center mt-6">
+                    <button onClick={() => setMostrarTabla(!mostrarTabla)} className="bg-[#252525] hover:bg-[#303030] text-green-400 font-semibold py-2.5 px-6 rounded-xl text-sm transition-colors border border-gray-700 shadow-md">
+                      {mostrarTabla ? 'Ocultar Detalle Anual' : 'Ver Tabla de Desglose Detallado'}
+                    </button>
+                  </div>
+
+                  {mostrarTabla && (
+                    <div className="mt-6 bg-[#121212] border border-gray-800 rounded-xl overflow-hidden text-sm shadow-xl">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead className="bg-[#1A1A1A] text-gray-400 border-b border-gray-800 text-xs">
+                            <tr>
+                              <th className="p-3.5 font-medium">Plazo</th>
+                              <th className="p-3.5 font-medium text-right">Capital Acumulado</th>
+                              <th className="p-3.5 font-medium text-right">Valor Futuro Esperado</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-800/60 font-mono text-xs">
+                            {simResultados.map((fila, index) => (
+                              <tr key={index} className="hover:bg-[#1a1a1a] transition-colors">
+                                <td className="p-3.5 font-sans font-medium text-gray-300">{fila.year}</td>
+                                <td className="p-3.5 text-right text-gray-400">${fila.aportes.toLocaleString('en-US')}</td>
+                                <td className="p-3.5 text-right font-bold text-green-400">${fila.esperado.toLocaleString('en-US')}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
+        {/* === PESTAÑA: MI PORTAFOLIO === */}
         {tabActiva === 'portafolio' && (
           <div className="space-y-8 animate-fade-in">
             <div className="flex items-center justify-between mb-6">
@@ -288,7 +452,7 @@ function App() {
         )}
       </main>
 
-      {/* Modal */}
+      {/* MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-[#1E1E1E] rounded-2xl border border-gray-700 shadow-2xl w-full max-w-md p-6">
