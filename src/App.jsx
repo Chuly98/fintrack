@@ -1178,7 +1178,7 @@ function App() {
               </div>
               <p>© {new Date().getFullYear()} FinTrack. Todos los derechos reservados.</p>
               <div className="flex space-x-4 text-gray-400">
-                <span>Mercados Financieros en Tiempo Real</span>
+                <span>Mercados Financieros en Tiempo Real. Creado por Chuly.</span>
               </div>
             </div>
           </footer>
