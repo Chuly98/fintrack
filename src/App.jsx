@@ -790,7 +790,7 @@ function App() {
               <div>
                 <h1 className="text-3xl font-bold mb-1">Mi Portafolio de Inversión</h1>
                 <p className="text-gray-400 text-sm">
-                  {cargandoPrecios ? "⏳ Conectando con la Bolsa de Valores..." : "☁️ Conectado a Supabase (Sincronización en la Nube)"}
+                  {cargandoPrecios ? "⏳ Conectando con la Bolsa de Valores..." : "✅ Conectado a Finnhub API & Supabase"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2.5">
