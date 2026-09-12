@@ -24,10 +24,13 @@ function App() {
   const [errorAuth, setErrorAuth] = useState('');
   const [cargandoAuth, setCargandoAuth] = useState(true);
 
-  // --- RECUPERACIÓN DE CONTRASEÑA ---
+  // --- RECUPERACIÓN Y CAMBIO DE CONTRASEÑA ---
   const [mostrarModalOlvidaste, setMostrarModalOlvidaste] = useState(false);
   const [emailRecuperacion, setEmailRecuperacion] = useState('');
   const [mensajeRecuperacion, setMensajeRecuperacion] = useState('');
+  const [mostrarModalNuevaPassword, setMostrarModalNuevaPassword] = useState(false);
+  const [nuevaPasswordInput, setNuevaPasswordInput] = useState('');
+  const [mensajeNuevaPassword, setMensajeNuevaPassword] = useState('');
 
   const [tabActiva, setTabActiva] = useState('portafolio');
   const [cargandoPrecios, setCargandoPrecios] = useState(false);
@@ -63,7 +66,7 @@ function App() {
   const [buscandoTickerAPI, setBuscandoTickerAPI] = useState(false);
   const [obteniendoPrecioAPI, setObteniendoPrecioAPI] = useState(false);
 
-  // Detección de sesión al iniciar
+  // Detección de sesión y eventos de autenticación
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
@@ -79,7 +82,11 @@ function App() {
       setCargandoAuth(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setMostrarModalNuevaPassword(true);
+      }
+
       if (session?.user) {
         setUsuarioActual({
           id: session.user.id,
@@ -206,6 +213,25 @@ function App() {
     } else {
       setMensajeRecuperacion('✅ Te hemos enviado un correo con instrucciones para restablecer tu contraseña.');
       setEmailRecuperacion('');
+    }
+  };
+
+  // Actualizar nueva contraseña
+  const handleGuardarNuevaPassword = async (e) => {
+    e.preventDefault();
+    setMensajeNuevaPassword('');
+
+    const { error } = await supabase.auth.updateUser({ password: nuevaPasswordInput });
+
+    if (error) {
+      setMensajeNuevaPassword(`❌ Error: ${error.message}`);
+    } else {
+      setMensajeNuevaPassword('✅ ¡Contraseña actualizada exitosamente!');
+      setTimeout(() => {
+        setMostrarModalNuevaPassword(false);
+        setNuevaPasswordInput('');
+        setMensajeNuevaPassword('');
+      }, 1500);
     }
   };
 
@@ -598,7 +624,7 @@ function App() {
             </form>
           )}
 
-          {/* MODAL RECUPERAR CONTRASEÑA */}
+          {/* MODAL SOLICITAR ENLACE RECUPERACIÓN */}
           {mostrarModalOlvidaste && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
               <div className="bg-[#1E1E1E] rounded-3xl border border-gray-700 shadow-2xl w-full max-w-md p-6 relative animate-fade-in">
@@ -635,6 +661,50 @@ function App() {
                     </button>
                     <button type="submit" className="flex-1 bg-green-500 hover:bg-green-600 text-[#121212] font-bold py-2.5 rounded-xl text-xs transition-colors shadow-[0_0_15px_rgba(34,197,94,0.3)]">
                       Enviar Enlace
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL PARA CAMBIAR A NUEVA CONTRASEÑA */}
+          {mostrarModalNuevaPassword && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+              <div className="bg-[#1E1E1E] rounded-3xl border border-gray-700 shadow-2xl w-full max-w-md p-6 relative animate-fade-in">
+                <div className="flex justify-between items-center mb-4 border-b border-gray-800 pb-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Nueva Contraseña</h2>
+                    <p className="text-xs text-gray-400">Ingresa la contraseña que deseas utilizar</p>
+                  </div>
+                  <button onClick={() => setMostrarModalNuevaPassword(false)} className="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+                </div>
+
+                {mensajeNuevaPassword && (
+                  <div className="text-xs p-3 rounded-xl mb-4 text-center font-medium bg-gray-800 border border-gray-700 text-gray-200">
+                    {mensajeNuevaPassword}
+                  </div>
+                )}
+
+                <form onSubmit={handleGuardarNuevaPassword} className="space-y-4">
+                  <div>
+                    <label className="text-xs text-gray-400 mb-1 block">Escribe tu nueva contraseña</label>
+                    <input
+                      required
+                      type="password"
+                      value={nuevaPasswordInput}
+                      onChange={(e) => setNuevaPasswordInput(e.target.value)}
+                      className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500"
+                      placeholder="••••••••"
+                    />
+                  </div>
+
+                  <div className="flex space-x-3 mt-6 pt-2">
+                    <button type="button" onClick={() => setMostrarModalNuevaPassword(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white py-2.5 rounded-xl text-xs font-semibold">
+                      Cancelar
+                    </button>
+                    <button type="submit" className="flex-1 bg-green-500 hover:bg-green-600 text-[#121212] font-bold py-2.5 rounded-xl text-xs transition-colors shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+                      Guardar Contraseña
                     </button>
                   </div>
                 </form>
@@ -838,7 +908,6 @@ function App() {
         {/* PORTAFOLIO */}
         {tabActiva === 'portafolio' && (
           <div className="space-y-8 animate-fade-in">
-            {/* Encabezado con mensaje actualizado */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-800 pb-6">
               <div>
                 <h1 className="text-3xl font-bold mb-1">Mi Portafolio de Inversión</h1>
