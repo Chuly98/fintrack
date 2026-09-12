@@ -24,10 +24,15 @@ function App() {
   const [errorAuth, setErrorAuth] = useState('');
   const [cargandoAuth, setCargandoAuth] = useState(true);
 
+  // --- RECUPERACIÓN DE CONTRASEÑA ---
+  const [mostrarModalOlvidaste, setMostrarModalOlvidaste] = useState(false);
+  const [emailRecuperacion, setEmailRecuperacion] = useState('');
+  const [mensajeRecuperacion, setMensajeRecuperacion] = useState('');
+
   const [tabActiva, setTabActiva] = useState('portafolio');
   const [cargandoPrecios, setCargandoPrecios] = useState(false);
 
-  // --- PORTAFOLIO Y CAJA (ESTADOS CON SUPABASE) ---
+  // --- PORTAFOLIO Y CAJA ---
   const [saldoCaja, setSaldoCaja] = useState(0);
   const [posiciones, setPosiciones] = useState([]);
   const [historialPatrimonio, setHistorialPatrimonio] = useState([]);
@@ -58,11 +63,8 @@ function App() {
   const [buscandoTickerAPI, setBuscandoTickerAPI] = useState(false);
   const [obteniendoPrecioAPI, setObteniendoPrecioAPI] = useState(false);
 
-  // -------------------------------------------------------------
-  // 1. CARGA DE DATOS Y ESCUCHADOR DE SESIÓN CON SUPABASE
-  // -------------------------------------------------------------
+  // Detección de sesión al iniciar
   useEffect(() => {
-    // Comprobar sesión actual
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         setUsuarioActual({
@@ -77,7 +79,6 @@ function App() {
       setCargandoAuth(false);
     });
 
-    // Escuchar cambios de estado en autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         setUsuarioActual({
@@ -99,7 +100,6 @@ function App() {
 
   const cargarDatosUsuario = async (userId) => {
     try {
-      // Cargar Perfil (Caja e Historial)
       const { data: perfil, error: errPerfil } = await supabase
         .from('perfiles')
         .select('*')
@@ -112,13 +112,11 @@ function App() {
         setSaldoCaja(parseFloat(perfil.saldo_caja) || 0);
         setHistorialPatrimonio(perfil.historial_patrimonio || []);
       } else {
-        // Si no existe perfil, crearlo
         await supabase.from('perfiles').insert([
           { id: userId, nombre: usuarioActual?.nombre || 'Inversor', saldo_caja: 0, historial_patrimonio: [] }
         ]);
       }
 
-      // Cargar Posiciones
       const { data: posData, error: errPos } = await supabase
         .from('posiciones')
         .select('*')
@@ -134,7 +132,7 @@ function App() {
           tipo: p.tipo,
           cant: parseFloat(p.cant),
           precioCompra: parseFloat(p.precio_compra),
-          precioActual: parseFloat(p.precio_compra), // Inicialmente igual hasta actualizar con API
+          precioActual: parseFloat(p.precio_compra),
           cambioDiarioPct: 0,
           cambioDiarioUSD: 0,
           notas: p.notas || ''
@@ -146,16 +144,13 @@ function App() {
     }
   };
 
-  // Guardar cambios de caja en Supabase
   const actualizarSaldoCajaBaseDatos = async (nuevoSaldo) => {
     if (!usuarioActual) return;
     setSaldoCaja(nuevoSaldo);
     await supabase.from('perfiles').update({ saldo_caja: nuevoSaldo }).eq('id', usuarioActual.id);
   };
 
-  // -------------------------------------------------------------
-  // 2. HANDLERS DE AUTENTICACIÓN CON SUPABASE
-  // -------------------------------------------------------------
+  // Handlers de Autenticación
   const handleRegistroSubmit = async (e) => {
     e.preventDefault();
     setErrorAuth('');
@@ -197,9 +192,24 @@ function App() {
     await supabase.auth.signOut();
   };
 
-  // -------------------------------------------------------------
-  // 3. SIMULADOR DE INTERÉS COMPUESTO
-  // -------------------------------------------------------------
+  // Restablecer contraseña por email
+  const handleRecuperarPassword = async (e) => {
+    e.preventDefault();
+    setMensajeRecuperacion('');
+
+    const { error } = await supabase.auth.resetPasswordForEmail(emailRecuperacion, {
+      redirectTo: `${window.location.origin}`,
+    });
+
+    if (error) {
+      setMensajeRecuperacion(`❌ Error: ${error.message}`);
+    } else {
+      setMensajeRecuperacion('✅ Te hemos enviado un correo con instrucciones para restablecer tu contraseña.');
+      setEmailRecuperacion('');
+    }
+  };
+
+  // Simulador
   const handleCalcular = (e) => {
     if (e) e.preventDefault();
     let datos = [];
@@ -244,9 +254,7 @@ function App() {
     setSimResultados(null); setMostrarTabla(false);
   };
 
-  // -------------------------------------------------------------
-  // 4. ACCIONES DE CAJA Y REINICIO
-  // -------------------------------------------------------------
+  // Acciones Caja y Cuenta
   const handleIngresarCapital = async (e) => {
     e.preventDefault();
     const monto = parseFloat(inputDeposito.toString().replace(',', '.'));
@@ -274,9 +282,7 @@ function App() {
     }
   };
 
-  // -------------------------------------------------------------
-  // 5. ACTUALIZAR PRECIOS FINNHUB & SNAPSHOT HISTÓRICO
-  // -------------------------------------------------------------
+  // Cotizaciones Finnhub
   const actualizarPreciosDesdeBolsa = async () => {
     if (!API_KEY || !usuarioActual) return;
     setCargandoPrecios(true);
@@ -304,7 +310,6 @@ function App() {
         setPosiciones(posicionesActuales);
       }
 
-      // Snapshot diario
       let sumaInversiones = 0;
       posicionesActuales.forEach(p => { sumaInversiones += p.cant * p.precioActual; });
       const totalHoy = saldoCaja + sumaInversiones;
@@ -320,7 +325,6 @@ function App() {
       }
       setHistorialPatrimonio(nuevoHistorial);
 
-      // Guardar historial en Supabase
       await supabase.from('perfiles').update({ historial_patrimonio: nuevoHistorial }).eq('id', usuarioActual.id);
 
     } catch (error) { console.error(error); } finally { setCargandoPrecios(false); }
@@ -333,9 +337,6 @@ function App() {
     return () => clearInterval(temporizador);
   }, [posiciones.length, saldoCaja, usuarioActual]);
 
-  // -------------------------------------------------------------
-  // 6. OPERACIONES DE MERCADO Y SUPABASE (COMPRAR / EDITAR / ELIMINAR)
-  // -------------------------------------------------------------
   const buscarSimboloEnBolsa = async (query) => {
     if (!query || query.length < 2 || !API_KEY) {
       setSugerencias([]);
@@ -492,9 +493,7 @@ function App() {
     else setPosiciones(posiciones.filter(p => p.id !== id));
   };
 
-  // -------------------------------------------------------------
-  // CÁLCULOS GENERALES DEL PORTAFOLIO
-  // -------------------------------------------------------------
+  // Cálculos Globales
   let valorInversiones = 0, costoTotalInversiones = 0, cambioDiarioTotalUSD = 0;
   const distribucionMap = { 'Acción': 0, 'ETF': 0, 'Renta Fija': 0, 'Cripto': 0 };
 
@@ -535,7 +534,7 @@ function App() {
     );
   }
 
-  // PANTALLA LOGIN/REGISTRO SI NO HAY SESIÓN EN SUPABASE
+  // Pantalla de Autenticación
   if (!usuarioActual) {
     return (
       <div className="min-h-screen bg-[#121212] font-sans text-white flex items-center justify-center p-4">
@@ -564,6 +563,16 @@ function App() {
               <div>
                 <label className="text-xs text-gray-400 mb-1 block">Contraseña</label>
                 <input required type="password" value={formAuth.password} onChange={(e) => setFormAuth({ ...formAuth, password: e.target.value })} className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500" placeholder="••••••••" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMensajeRecuperacion('');
+                    setMostrarModalOlvidaste(true);
+                  }}
+                  className="text-xs text-green-400 hover:underline mt-1 block text-right w-full"
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
               </div>
               <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-[#121212] font-bold py-3 rounded-xl transition-colors shadow-[0_0_15px_rgba(34,197,94,0.3)] mt-2">
                 Ingresar a FinTrack
@@ -587,6 +596,50 @@ function App() {
                 Crear Cuenta Gratis
               </button>
             </form>
+          )}
+
+          {/* MODAL RECUPERAR CONTRASEÑA */}
+          {mostrarModalOlvidaste && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+              <div className="bg-[#1E1E1E] rounded-3xl border border-gray-700 shadow-2xl w-full max-w-md p-6 relative animate-fade-in">
+                <div className="flex justify-between items-center mb-4 border-b border-gray-800 pb-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Recuperar Contraseña</h2>
+                    <p className="text-xs text-gray-400">Te enviaremos un enlace a tu correo</p>
+                  </div>
+                  <button onClick={() => setMostrarModalOlvidaste(false)} className="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+                </div>
+
+                {mensajeRecuperacion && (
+                  <div className="text-xs p-3 rounded-xl mb-4 text-center font-medium bg-gray-800 border border-gray-700 text-gray-200">
+                    {mensajeRecuperacion}
+                  </div>
+                )}
+
+                <form onSubmit={handleRecuperarPassword} className="space-y-4">
+                  <div>
+                    <label className="text-xs text-gray-400 mb-1 block">Tu Correo Electrónico</label>
+                    <input
+                      required
+                      type="email"
+                      value={emailRecuperacion}
+                      onChange={(e) => setEmailRecuperacion(e.target.value)}
+                      className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500"
+                      placeholder="tucorreo@example.com"
+                    />
+                  </div>
+
+                  <div className="flex space-x-3 mt-6 pt-2">
+                    <button type="button" onClick={() => setMostrarModalOlvidaste(false)} className="flex-1 bg-gray-800 hover:bg-gray-700 text-white py-2.5 rounded-xl text-xs font-semibold">
+                      Cancelar
+                    </button>
+                    <button type="submit" className="flex-1 bg-green-500 hover:bg-green-600 text-[#121212] font-bold py-2.5 rounded-xl text-xs transition-colors shadow-[0_0_15px_rgba(34,197,94,0.3)]">
+                      Enviar Enlace
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -628,7 +681,7 @@ function App() {
       {/* CONTENIDO PRINCIPAL */}
       <main className="max-w-7xl mx-auto px-6 py-10 relative flex-1 w-full">
 
-        {/* === PESTAÑA: SIMULADOR === */}
+        {/* SIMULADOR */}
         {tabActiva === 'simulador' && (
           <div className="max-w-4xl mx-auto animate-fade-in">
             <div className="text-center mb-10">
@@ -782,10 +835,10 @@ function App() {
           </div>
         )}
 
-        {/* === PESTAÑA: MI PORTAFOLIO CON CAJA Y HISTORIAL DE PATRIMONIO === */}
+        {/* PORTAFOLIO */}
         {tabActiva === 'portafolio' && (
           <div className="space-y-8 animate-fade-in">
-            {/* Encabezado Principal */}
+            {/* Encabezado con mensaje actualizado */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-800 pb-6">
               <div>
                 <h1 className="text-3xl font-bold mb-1">Mi Portafolio de Inversión</h1>
@@ -816,7 +869,6 @@ function App() {
               </div>
             </div>
 
-            {/* BANNER BIENVENIDA SI NO TIENE SALDO INICIAL */}
             {saldoCaja === 0 && posiciones.length === 0 && (
               <div className="bg-gradient-to-r from-green-500/20 via-green-500/10 to-transparent border border-green-500/40 p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 animate-pulse">
                 <div>
@@ -829,7 +881,6 @@ function App() {
               </div>
             )}
 
-            {/* Métricas Globales de Balance (INCLUYENDO CAJA) */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className="bg-[#1E1E1E] p-6 rounded-2xl border border-gray-800 shadow-lg">
                 <h3 className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-1">Patrimonio Total</h3>
@@ -877,7 +928,6 @@ function App() {
               </div>
             </div>
 
-            {/* GRÁFICO HISTÓRICO REAL Y ACTIVOS DESTACADOS */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 bg-[#1E1E1E] p-6 rounded-2xl border border-gray-800 shadow-lg">
                 <div className="flex justify-between items-center mb-4">
@@ -943,7 +993,6 @@ function App() {
               </div>
             </div>
 
-            {/* Barra de Filtros y Buscador */}
             <div className="bg-[#1E1E1E] p-4 rounded-2xl border border-gray-800 flex flex-col md:flex-row justify-between items-center gap-4">
               <div className="relative w-full md:w-72">
                 <span className="absolute left-3 top-2.5 text-gray-500">🔍</span>
@@ -969,7 +1018,6 @@ function App() {
               </div>
             </div>
 
-            {/* Distribución y Tabla de Activos */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-1 bg-[#1E1E1E] p-6 rounded-2xl border border-gray-800 shadow-lg flex flex-col">
                 <h3 className="text-base font-semibold mb-4 border-b border-gray-800 pb-2">Distribución de Activos</h3>
@@ -1004,7 +1052,6 @@ function App() {
                 )}
               </div>
 
-              {/* Tabla de Posiciones */}
               <div className="lg:col-span-2 bg-[#1E1E1E] p-6 rounded-2xl border border-gray-800 shadow-lg overflow-x-auto">
                 <h3 className="text-base font-semibold mb-6 border-b border-gray-800 pb-2">Tus Posiciones ({posicionesFiltradas.length})</h3>
                 <table className="w-full text-left text-xs">
@@ -1077,7 +1124,7 @@ function App() {
         )}
       </main>
 
-      {/* PIE DE PÁGINA */}
+      {/* FOOTER */}
       <footer className="border-t border-gray-800 bg-[#121212] py-8 mt-16 text-center text-xs text-gray-500 w-full">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-2">
@@ -1086,12 +1133,12 @@ function App() {
           </div>
           <p>© {new Date().getFullYear()} FinTrack. Todos los derechos reservados.</p>
           <div className="flex space-x-4 text-gray-400">
-            <span>Mercados Financieros en Tiempo Real (Creado por Chuly)</span>
+            <span>Mercados Financieros en Tiempo Real</span>
           </div>
         </div>
       </footer>
 
-      {/* MODAL INGRESAR CAPITAL EN CAJA */}
+      {/* MODAL INGRESAR CAPITAL */}
       {mostrarModalCaja && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <div className="bg-[#1E1E1E] rounded-3xl border border-gray-700 shadow-2xl w-full max-w-md p-6 relative animate-fade-in">
@@ -1280,7 +1327,6 @@ function App() {
                 </div>
               </div>
 
-              {/* RESUMEN Y VALIDACIÓN */}
               {(() => {
                 const c = parseFloat(nuevoActivo.cant.toString().replace(',', '.')) || 0;
                 const p = parseFloat(nuevoActivo.precioCompra.toString().replace(',', '.')) || 0;
