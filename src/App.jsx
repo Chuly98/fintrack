@@ -17,18 +17,20 @@ const ACTIVOS_POPULARES = [
 ];
 
 function App() {
-  // --- AUTENTICACIÓN ---
-  const [usuarioActual, setUsuarioActual] = useState(() => {
-    const sesion = localStorage.getItem('finTrackSesionActiva');
-    return sesion ? JSON.parse(sesion) : null;
-  });
-
+  // --- AUTENTICACIÓN SUPABASE ---
+  const [usuarioActual, setUsuarioActual] = useState(null);
   const [modoAuth, setModoAuth] = useState('login');
   const [formAuth, setFormAuth] = useState({ nombre: '', email: '', password: '' });
   const [errorAuth, setErrorAuth] = useState('');
+  const [cargandoAuth, setCargandoAuth] = useState(true);
 
   const [tabActiva, setTabActiva] = useState('portafolio');
   const [cargandoPrecios, setCargandoPrecios] = useState(false);
+
+  // --- PORTAFOLIO Y CAJA (ESTADOS CON SUPABASE) ---
+  const [saldoCaja, setSaldoCaja] = useState(0);
+  const [posiciones, setPosiciones] = useState([]);
+  const [historialPatrimonio, setHistorialPatrimonio] = useState([]);
 
   // --- SIMULADOR DE INTERÉS COMPUESTO ---
   const [simInicial, setSimInicial] = useState(1000);
@@ -40,6 +42,164 @@ function App() {
   const [simResultados, setSimResultados] = useState(null);
   const [mostrarTabla, setMostrarTabla] = useState(false);
 
+  // --- MODALES Y FORMULARIOS ---
+  const [inputDeposito, setInputDeposito] = useState('');
+  const [mostrarModalCaja, setMostrarModalCaja] = useState(false);
+  const [busqueda, setBusqueda] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState('Todos');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modoEdicion, setModoEdicion] = useState(false);
+  const [activoEditandoId, setActivoEditandoId] = useState(null);
+  const [errorCaja, setErrorCaja] = useState('');
+  const [nuevoActivo, setNuevoActivo] = useState({
+    ticker: '', nombre: '', tipo: 'Acción', cant: '', precioCompra: '', notas: ''
+  });
+  const [sugerencias, setSugerencias] = useState([]);
+  const [buscandoTickerAPI, setBuscandoTickerAPI] = useState(false);
+  const [obteniendoPrecioAPI, setObteniendoPrecioAPI] = useState(false);
+
+  // -------------------------------------------------------------
+  // 1. CARGA DE DATOS Y ESCUCHADOR DE SESIÓN CON SUPABASE
+  // -------------------------------------------------------------
+  useEffect(() => {
+    // Comprobar sesión actual
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUsuarioActual({
+          id: session.user.id,
+          email: session.user.email,
+          nombre: session.user.user_metadata?.nombre || session.user.email.split('@')[0]
+        });
+        cargarDatosUsuario(session.user.id);
+      } else {
+        setUsuarioActual(null);
+      }
+      setCargandoAuth(false);
+    });
+
+    // Escuchar cambios de estado en autenticación
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setUsuarioActual({
+          id: session.user.id,
+          email: session.user.email,
+          nombre: session.user.user_metadata?.nombre || session.user.email.split('@')[0]
+        });
+        cargarDatosUsuario(session.user.id);
+      } else {
+        setUsuarioActual(null);
+        setSaldoCaja(0);
+        setPosiciones([]);
+        setHistorialPatrimonio([]);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const cargarDatosUsuario = async (userId) => {
+    try {
+      // Cargar Perfil (Caja e Historial)
+      const { data: perfil, error: errPerfil } = await supabase
+        .from('perfiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (errPerfil) console.error("Error al cargar perfil:", errPerfil.message);
+
+      if (perfil) {
+        setSaldoCaja(parseFloat(perfil.saldo_caja) || 0);
+        setHistorialPatrimonio(perfil.historial_patrimonio || []);
+      } else {
+        // Si no existe perfil, crearlo
+        await supabase.from('perfiles').insert([
+          { id: userId, nombre: usuarioActual?.nombre || 'Inversor', saldo_caja: 0, historial_patrimonio: [] }
+        ]);
+      }
+
+      // Cargar Posiciones
+      const { data: posData, error: errPos } = await supabase
+        .from('posiciones')
+        .select('*')
+        .eq('user_id', userId);
+
+      if (errPos) {
+        console.error("Error al cargar posiciones:", errPos.message);
+      } else if (posData) {
+        const formateadas = posData.map(p => ({
+          id: p.id,
+          ticker: p.ticker,
+          nombre: p.nombre,
+          tipo: p.tipo,
+          cant: parseFloat(p.cant),
+          precioCompra: parseFloat(p.precio_compra),
+          precioActual: parseFloat(p.precio_compra), // Inicialmente igual hasta actualizar con API
+          cambioDiarioPct: 0,
+          cambioDiarioUSD: 0,
+          notas: p.notas || ''
+        }));
+        setPosiciones(formateadas);
+      }
+    } catch (e) {
+      console.error("Error global al cargar datos:", e);
+    }
+  };
+
+  // Guardar cambios de caja en Supabase
+  const actualizarSaldoCajaBaseDatos = async (nuevoSaldo) => {
+    if (!usuarioActual) return;
+    setSaldoCaja(nuevoSaldo);
+    await supabase.from('perfiles').update({ saldo_caja: nuevoSaldo }).eq('id', usuarioActual.id);
+  };
+
+  // -------------------------------------------------------------
+  // 2. HANDLERS DE AUTENTICACIÓN CON SUPABASE
+  // -------------------------------------------------------------
+  const handleRegistroSubmit = async (e) => {
+    e.preventDefault();
+    setErrorAuth('');
+    const { data, error } = await supabase.auth.signUp({
+      email: formAuth.email,
+      password: formAuth.password,
+      options: { data: { nombre: formAuth.nombre } }
+    });
+
+    if (error) {
+      setErrorAuth(error.message);
+      return;
+    }
+
+    if (data.user) {
+      await supabase.from('perfiles').insert([
+        { id: data.user.id, nombre: formAuth.nombre, saldo_caja: 0, historial_patrimonio: [] }
+      ]);
+      setFormAuth({ nombre: '', email: '', password: '' });
+    }
+  };
+
+  const handleLoginSubmit = async (e) => {
+    e.preventDefault();
+    setErrorAuth('');
+    const { error } = await supabase.auth.signInWithPassword({
+      email: formAuth.email,
+      password: formAuth.password,
+    });
+
+    if (error) {
+      setErrorAuth('Correo o contraseña incorrectos.');
+    } else {
+      setFormAuth({ nombre: '', email: '', password: '' });
+    }
+  };
+
+  const handleCerrarSesion = async () => {
+    await supabase.auth.signOut();
+  };
+
+  // -------------------------------------------------------------
+  // 3. SIMULADOR DE INTERÉS COMPUESTO
+  // -------------------------------------------------------------
   const handleCalcular = (e) => {
     if (e) e.preventDefault();
     let datos = [];
@@ -84,105 +244,41 @@ function App() {
     setSimResultados(null); setMostrarTabla(false);
   };
 
-  // --- HANDLERS DE AUTENTICACIÓN ---
-  const handleRegistroSubmit = (e) => {
-    e.preventDefault(); setErrorAuth('');
-    const usuarios = JSON.parse(localStorage.getItem('finTrackUsuarios') || '[]');
-    if (usuarios.find(u => u.email === formAuth.email)) {
-      setErrorAuth('Este correo ya está registrado.'); return;
-    }
-    const nuevoUsuario = { nombre: formAuth.nombre, email: formAuth.email, password: formAuth.password };
-    usuarios.push(nuevoUsuario);
-    localStorage.setItem('finTrackUsuarios', JSON.stringify(usuarios));
-    localStorage.setItem('finTrackSesionActiva', JSON.stringify(nuevoUsuario));
-    setUsuarioActual(nuevoUsuario); setFormAuth({ nombre: '', email: '', password: '' });
-  };
-
-  const handleLoginSubmit = (e) => {
-    e.preventDefault(); setErrorAuth('');
-    const usuarios = JSON.parse(localStorage.getItem('finTrackUsuarios') || '[]');
-    const usuario = usuarios.find(u => u.email === formAuth.email && u.password === formAuth.password);
-    if (!usuario) { setErrorAuth('Correo o contraseña incorrectos.'); return; }
-    localStorage.setItem('finTrackSesionActiva', JSON.stringify(usuario));
-    setUsuarioActual(usuario); setFormAuth({ nombre: '', email: '', password: '' });
-  };
-
-  const handleCerrarSesion = () => {
-    localStorage.removeItem('finTrackSesionActiva');
-    setUsuarioActual(null);
-  };
-
-  // --- PORTAFOLIO Y CAJA ---
-  const [saldoCaja, setSaldoCaja] = useState(() => {
-    const dinero = localStorage.getItem('finTrackSaldoCaja');
-    return dinero !== null ? parseFloat(dinero) : 0;
-  });
-
-  const [inputDeposito, setInputDeposito] = useState('');
-  const [mostrarModalCaja, setMostrarModalCaja] = useState(false);
-
-  const [posiciones, setPosiciones] = useState(() => {
-    const datos = localStorage.getItem('finTrackPortafolio');
-    return datos ? JSON.parse(datos) : [];
-  });
-
-  // HISTORIAL DE PATRIMONIO REAL
-  const [historialPatrimonio, setHistorialPatrimonio] = useState(() => {
-    const datos = localStorage.getItem('finTrackHistorialPatrimonio');
-    return datos ? JSON.parse(datos) : [];
-  });
-
-  const [busqueda, setBusqueda] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState('Todos');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modoEdicion, setModoEdicion] = useState(false);
-  const [activoEditandoTicker, setActivoEditandoTicker] = useState(null);
-  const [errorCaja, setErrorCaja] = useState('');
-
-  const [nuevoActivo, setNuevoActivo] = useState({
-    ticker: '', nombre: '', tipo: 'Acción', cant: '', precioCompra: '', notas: ''
-  });
-  const [sugerencias, setSugerencias] = useState([]);
-  const [buscandoTickerAPI, setBuscandoTickerAPI] = useState(false);
-  const [obteniendoPrecioAPI, setObteniendoPrecioAPI] = useState(false);
-
-  useEffect(() => {
-    localStorage.setItem('finTrackPortafolio', JSON.stringify(posiciones));
-  }, [posiciones]);
-
-  useEffect(() => {
-    localStorage.setItem('finTrackSaldoCaja', saldoCaja.toString());
-  }, [saldoCaja]);
-
-  useEffect(() => {
-    localStorage.setItem('finTrackHistorialPatrimonio', JSON.stringify(historialPatrimonio));
-  }, [historialPatrimonio]);
-
-  const handleIngresarCapital = (e) => {
+  // -------------------------------------------------------------
+  // 4. ACCIONES DE CAJA Y REINICIO
+  // -------------------------------------------------------------
+  const handleIngresarCapital = async (e) => {
     e.preventDefault();
     const monto = parseFloat(inputDeposito.toString().replace(',', '.'));
     if (isNaN(monto) || monto <= 0) return;
-    setSaldoCaja(prev => prev + monto);
+    const nuevoSaldo = saldoCaja + monto;
+    await actualizarSaldoCajaBaseDatos(nuevoSaldo);
     setInputDeposito('');
     setMostrarModalCaja(false);
   };
 
-  const handleResetearCaja = () => {
+  const handleResetearCaja = async () => {
     if (window.confirm("¿Estás seguro de que deseas vaciar tu dinero en caja a $0.00?")) {
-      setSaldoCaja(0);
+      await actualizarSaldoCajaBaseDatos(0);
     }
   };
 
-  const handleResetearPortafolioCompleto = () => {
+  const handleResetearPortafolioCompleto = async () => {
     if (window.confirm("⚠️ ¿Deseas reiniciar completamente tu cuenta? Se eliminarán todas tus posiciones, tu caja e historial de patrimonio.")) {
+      if (!usuarioActual) return;
+      await supabase.from('posiciones').delete().eq('user_id', usuarioActual.id);
+      await supabase.from('perfiles').update({ saldo_caja: 0, historial_patrimonio: [] }).eq('id', usuarioActual.id);
       setSaldoCaja(0);
       setPosiciones([]);
       setHistorialPatrimonio([]);
     }
   };
 
+  // -------------------------------------------------------------
+  // 5. ACTUALIZAR PRECIOS FINNHUB & SNAPSHOT HISTÓRICO
+  // -------------------------------------------------------------
   const actualizarPreciosDesdeBolsa = async () => {
-    if (!API_KEY) return;
+    if (!API_KEY || !usuarioActual) return;
     setCargandoPrecios(true);
     try {
       let posicionesActuales = posiciones;
@@ -208,24 +304,24 @@ function App() {
         setPosiciones(posicionesActuales);
       }
 
-      // REGISTRO AUTOMÁTICO DE SNAPSHOT DEL DÍA
+      // Snapshot diario
       let sumaInversiones = 0;
       posicionesActuales.forEach(p => { sumaInversiones += p.cant * p.precioActual; });
       const totalHoy = saldoCaja + sumaInversiones;
-
       const hoyStr = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' });
 
-      setHistorialPatrimonio(prev => {
-        const indiceHoy = prev.findIndex(item => item.fecha === hoyStr);
-        if (indiceHoy >= 0) {
-          const copia = [...prev];
-          copia[indiceHoy] = { fecha: hoyStr, valor: Math.round(totalHoy * 100) / 100 };
-          return copia;
-        } else {
-          const nuevoHistorial = [...prev, { fecha: hoyStr, valor: Math.round(totalHoy * 100) / 100 }];
-          return nuevoHistorial.slice(-14);
-        }
-      });
+      let nuevoHistorial = [...historialPatrimonio];
+      const indiceHoy = nuevoHistorial.findIndex(item => item.fecha === hoyStr);
+      if (indiceHoy >= 0) {
+        nuevoHistorial[indiceHoy] = { fecha: hoyStr, valor: Math.round(totalHoy * 100) / 100 };
+      } else {
+        nuevoHistorial.push({ fecha: hoyStr, valor: Math.round(totalHoy * 100) / 100 });
+        nuevoHistorial = nuevoHistorial.slice(-14);
+      }
+      setHistorialPatrimonio(nuevoHistorial);
+
+      // Guardar historial en Supabase
+      await supabase.from('perfiles').update({ historial_patrimonio: nuevoHistorial }).eq('id', usuarioActual.id);
 
     } catch (error) { console.error(error); } finally { setCargandoPrecios(false); }
   };
@@ -235,9 +331,11 @@ function App() {
     actualizarPreciosDesdeBolsa();
     const temporizador = setInterval(() => actualizarPreciosDesdeBolsa(), 30000);
     return () => clearInterval(temporizador);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [posiciones.length, saldoCaja, usuarioActual]);
 
+  // -------------------------------------------------------------
+  // 6. OPERACIONES DE MERCADO Y SUPABASE (COMPRAR / EDITAR / ELIMINAR)
+  // -------------------------------------------------------------
   const buscarSimboloEnBolsa = async (query) => {
     if (!query || query.length < 2 || !API_KEY) {
       setSugerencias([]);
@@ -260,7 +358,6 @@ function App() {
   const seleccionarSugerencia = async (tickerSymbol, nombreEmpresa, tipoManual) => {
     setSugerencias([]);
     setObteniendoPrecioAPI(true);
-
     let precioEnVivo = '';
     const cleanTicker = tickerSymbol.replace('BINANCE:', '');
 
@@ -287,14 +384,14 @@ function App() {
 
   const abrirModalCrear = () => {
     setErrorCaja('');
-    setModoEdicion(false); setActivoEditandoTicker(null); setSugerencias([]);
+    setModoEdicion(false); setActivoEditandoId(null); setSugerencias([]);
     setNuevoActivo({ ticker: '', nombre: '', tipo: 'Acción', cant: '', precioCompra: '', notas: '' });
     setIsModalOpen(true);
   };
 
   const abrirModalEditar = (pos) => {
     setErrorCaja('');
-    setModoEdicion(true); setActivoEditandoTicker(pos.ticker); setSugerencias([]);
+    setModoEdicion(true); setActivoEditandoId(pos.id); setSugerencias([]);
     setNuevoActivo({
       ticker: pos.ticker, nombre: pos.nombre, tipo: pos.tipo,
       cant: pos.cant.toString(), precioCompra: pos.precioCompra.toString(), notas: pos.notas || ''
@@ -302,9 +399,10 @@ function App() {
     setIsModalOpen(true);
   };
 
-  const handleGuardarActivo = (e) => {
+  const handleGuardarActivo = async (e) => {
     e.preventDefault();
     setErrorCaja('');
+    if (!usuarioActual) return;
 
     const tickerUpper = nuevoActivo.ticker.toUpperCase().trim();
     const cantNuevas = parseFloat(nuevoActivo.cant.toString().replace(',', '.')) || 0;
@@ -312,7 +410,7 @@ function App() {
     const costoTotalOperacion = cantNuevas * precioNuevo;
 
     if (modoEdicion) {
-      const posAnterior = posiciones.find(p => p.ticker === activoEditandoTicker);
+      const posAnterior = posiciones.find(p => p.id === activoEditandoId);
       const costoAnterior = posAnterior ? posAnterior.cant * posAnterior.precioCompra : 0;
       const diferenciaCosto = costoTotalOperacion - costoAnterior;
 
@@ -321,20 +419,22 @@ function App() {
         return;
       }
 
-      setSaldoCaja(prev => prev - diferenciaCosto);
-      setPosiciones(posiciones.map(p => {
-        if (p.ticker === activoEditandoTicker) {
-          return {
-            ...p,
-            nombre: nuevoActivo.nombre || p.nombre,
-            tipo: nuevoActivo.tipo,
-            cant: cantNuevas,
-            precioCompra: precioNuevo,
-            notas: nuevoActivo.notas
-          };
-        }
-        return p;
-      }));
+      await actualizarSaldoCajaBaseDatos(saldoCaja - diferenciaCosto);
+
+      const { error } = await supabase
+        .from('posiciones')
+        .update({
+          nombre: nuevoActivo.nombre || posAnterior.nombre,
+          tipo: nuevoActivo.tipo,
+          cant: cantNuevas,
+          precio_compra: precioNuevo,
+          notas: nuevoActivo.notas
+        })
+        .eq('id', activoEditandoId);
+
+      if (error) console.error("Error al editar:", error.message);
+      else cargarDatosUsuario(usuarioActual.id);
+
     } else {
       if (costoTotalOperacion > saldoCaja) {
         setErrorCaja(`Saldo insuficiente. Esta compra requiere $${costoTotalOperacion.toFixed(2)} y tienes $${saldoCaja.toFixed(2)} disponible.`);
@@ -348,47 +448,53 @@ function App() {
         const costoTotalInvertido = (activoExistente.cant * activoExistente.precioCompra) + costoTotalOperacion;
         const nuevoPrecioPromedio = costoTotalInvertido / cantTotal;
 
-        setSaldoCaja(prev => prev - costoTotalOperacion);
-        setPosiciones(posiciones.map(p => {
-          if (p.ticker === tickerUpper) {
-            return {
-              ...p,
-              cant: cantTotal,
-              precioCompra: nuevoPrecioPromedio,
-              precioActual: precioNuevo,
-              notas: nuevoActivo.notas || p.notas
-            };
-          }
-          return p;
-        }));
+        await actualizarSaldoCajaBaseDatos(saldoCaja - costoTotalOperacion);
+
+        await supabase
+          .from('posiciones')
+          .update({
+            cant: cantTotal,
+            precio_compra: nuevoPrecioPromedio,
+            notas: nuevoActivo.notas || activoExistente.notas
+          })
+          .eq('id', activoExistente.id);
+
       } else {
-        setSaldoCaja(prev => prev - costoTotalOperacion);
-        const activo = {
-          ticker: tickerUpper,
-          nombre: nuevoActivo.nombre || tickerUpper,
-          tipo: nuevoActivo.tipo,
-          cant: cantNuevas,
-          precioCompra: precioNuevo,
-          precioActual: precioNuevo,
-          cambioDiarioPct: 0, cambioDiarioUSD: 0,
-          notas: nuevoActivo.notas || ''
-        };
-        setPosiciones([...posiciones, activo]);
+        await actualizarSaldoCajaBaseDatos(saldoCaja - costoTotalOperacion);
+
+        await supabase.from('posiciones').insert([
+          {
+            user_id: usuarioActual.id,
+            ticker: tickerUpper,
+            nombre: nuevoActivo.nombre || tickerUpper,
+            tipo: nuevoActivo.tipo,
+            cant: cantNuevas,
+            precio_compra: precioNuevo,
+            notas: nuevoActivo.notas || ''
+          }
+        ]);
       }
+      cargarDatosUsuario(usuarioActual.id);
     }
     setIsModalOpen(false);
   };
 
-  const eliminarActivo = (ticker) => {
-    const pos = posiciones.find(p => p.ticker === ticker);
+  const eliminarActivo = async (id, ticker) => {
+    if (!usuarioActual) return;
+    const pos = posiciones.find(p => p.id === id);
     if (pos) {
       const reembolso = pos.cant * pos.precioActual;
-      setSaldoCaja(prev => prev + reembolso);
+      await actualizarSaldoCajaBaseDatos(saldoCaja + reembolso);
     }
-    setPosiciones(posiciones.filter(p => p.ticker !== ticker));
+
+    const { error } = await supabase.from('posiciones').delete().eq('id', id);
+    if (error) console.error("Error al eliminar:", error.message);
+    else setPosiciones(posiciones.filter(p => p.id !== id));
   };
 
-  // CÁLCULOS DEL PORTAFOLIO Y CAJA
+  // -------------------------------------------------------------
+  // CÁLCULOS GENERALES DEL PORTAFOLIO
+  // -------------------------------------------------------------
   let valorInversiones = 0, costoTotalInversiones = 0, cambioDiarioTotalUSD = 0;
   const distribucionMap = { 'Acción': 0, 'ETF': 0, 'Renta Fija': 0, 'Cripto': 0 };
 
@@ -421,7 +527,15 @@ function App() {
     return coincideBusqueda && coincideTipo;
   });
 
-  // PANTALLA LOGIN/REGISTRO SI NO HAY SESIÓN
+  if (cargandoAuth) {
+    return (
+      <div className="min-h-screen bg-[#121212] flex items-center justify-center text-white">
+        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-green-500"></div>
+      </div>
+    );
+  }
+
+  // PANTALLA LOGIN/REGISTRO SI NO HAY SESIÓN EN SUPABASE
   if (!usuarioActual) {
     return (
       <div className="min-h-screen bg-[#121212] font-sans text-white flex items-center justify-center p-4">
@@ -676,7 +790,7 @@ function App() {
               <div>
                 <h1 className="text-3xl font-bold mb-1">Mi Portafolio de Inversión</h1>
                 <p className="text-gray-400 text-sm">
-                  {cargandoPrecios ? "⏳ Conectando con la Bolsa de Valores..." : "✅ Conectado a Finnhub API (Tiempo Real)"}
+                  {cargandoPrecios ? "⏳ Conectando con la Bolsa de Valores..." : "☁️ Conectado a Supabase (Sincronización en la Nube)"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2.5">
@@ -946,7 +1060,7 @@ function App() {
                                 <button onClick={() => abrirModalEditar(pos)} className="text-gray-400 hover:text-white p-1 rounded transition-colors" title="Editar Activo">
                                   ✏️
                                 </button>
-                                <button onClick={() => eliminarActivo(pos.ticker)} className="text-red-500 hover:text-red-400 p-1 rounded transition-colors" title="Eliminar Activo (Vender)">
+                                <button onClick={() => eliminarActivo(pos.id, pos.ticker)} className="text-red-500 hover:text-red-400 p-1 rounded transition-colors" title="Eliminar Activo (Vender)">
                                   🗑️
                                 </button>
                               </div>
@@ -963,7 +1077,7 @@ function App() {
         )}
       </main>
 
-      {/* PIE DE PÁGINA / FOOTER CON COPYRIGHT Y DERECHOS RESERVADOS */}
+      {/* PIE DE PÁGINA */}
       <footer className="border-t border-gray-800 bg-[#121212] py-8 mt-16 text-center text-xs text-gray-500 w-full">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center space-x-2">
@@ -1014,7 +1128,7 @@ function App() {
         </div>
       )}
 
-      {/* MODAL EXPLORADOR DE MERCADO MEJORADO */}
+      {/* MODAL EXPLORADOR DE MERCADO */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
           <div className="bg-[#1E1E1E] rounded-3xl border border-gray-700 shadow-2xl w-full max-w-lg p-6 relative animate-fade-in">
@@ -1166,7 +1280,7 @@ function App() {
                 </div>
               </div>
 
-              {/* RESUMEN Y VALIDACIÓN DE IMPORTE EN TIEMPO REAL */}
+              {/* RESUMEN Y VALIDACIÓN */}
               {(() => {
                 const c = parseFloat(nuevoActivo.cant.toString().replace(',', '.')) || 0;
                 const p = parseFloat(nuevoActivo.precioCompra.toString().replace(',', '.')) || 0;
