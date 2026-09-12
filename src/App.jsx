@@ -236,7 +236,7 @@ function App() {
         setMostrarModalNuevaPassword(false);
         setNuevaPasswordInput('');
         setMensajeNuevaPassword('');
-        window.location.hash = ''; // Limpiar el hash de la URL
+        window.location.hash = '';
       }, 1500);
     }
   };
@@ -568,64 +568,79 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#121212] font-sans text-white flex flex-col justify-between">
-      {/* PANTALLA DE AUTENTICACIÓN (SI NO HAY SESIÓN) */}
+      {/* PANTALLA DE AUTENTICACIÓN CON FONDO MODERNO */}
       {!usuarioActual ? (
-        <div className="min-h-screen bg-[#121212] font-sans text-white flex items-center justify-center p-4">
-          <div className="bg-[#1E1E1E] border border-gray-800 rounded-3xl shadow-2xl w-full max-w-md p-8 animate-fade-in">
+        <div className="min-h-screen bg-[#0d1117] font-sans text-white flex items-center justify-center p-4 relative overflow-hidden">
+          {/* LIENTES Y LUCES FLOTANTES DE FONDO */}
+          <div className="absolute -top-40 -left-40 w-96 h-96 bg-green-500/20 rounded-full blur-[120px] pointer-events-none"></div>
+          <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-emerald-600/15 rounded-full blur-[140px] pointer-events-none"></div>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-green-400/5 rounded-full blur-[160px] pointer-events-none"></div>
+
+          {/* PATRÓN DE MALLA DE FONDO */}
+          <div
+            className="absolute inset-0 opacity-[0.03] pointer-events-none"
+            style={{
+              backgroundImage: `radial-gradient(#22c55e 1px, transparent 1px)`,
+              backgroundSize: '32px 32px'
+            }}
+          ></div>
+
+          {/* TARJETA PRINCIPAL DEL FORMULARIO */}
+          <div className="bg-[#161b22]/90 backdrop-blur-xl border border-gray-800 rounded-3xl shadow-[0_0_50px_rgba(0,0,0,0.8)] w-full max-w-md p-8 relative z-10 animate-fade-in">
             <div className="flex flex-col items-center mb-8">
-              <div className="w-12 h-12 bg-green-500 rounded-2xl flex items-center justify-center mb-3 shadow-[0_0_20px_rgba(34,197,94,0.4)]">
-                <span className="text-white font-bold text-2xl">F</span>
+              <div className="w-14 h-14 bg-gradient-to-tr from-green-500 to-emerald-400 rounded-2xl flex items-center justify-center mb-3 shadow-[0_0_25px_rgba(34,197,94,0.4)] border border-green-400/30">
+                <span className="text-[#0d1117] font-black text-3xl">F</span>
               </div>
-              <h1 className="text-2xl font-bold tracking-wide">Fin<span className="text-green-400">Track</span></h1>
-              <p className="text-gray-400 text-sm mt-1">Plataforma de gestión financiera e inversión</p>
+              <h1 className="text-3xl font-extrabold tracking-tight">Fin<span className="text-green-400">Track</span></h1>
+              <p className="text-gray-400 text-xs mt-1.5 font-medium">Plataforma de gestión financiera e inversión</p>
             </div>
 
-            <div className="flex bg-[#121212] p-1 rounded-xl mb-6 border border-gray-800">
-              <button onClick={() => { setModoAuth('login'); setErrorAuth(''); }} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${modoAuth === 'login' ? 'bg-green-500 text-[#121212]' : 'text-gray-400 hover:text-white'}`}>Iniciar Sesión</button>
-              <button onClick={() => { setModoAuth('register'); setErrorAuth(''); }} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-colors ${modoAuth === 'register' ? 'bg-green-500 text-[#121212]' : 'text-gray-400 hover:text-white'}`}>Registrarse</button>
+            <div className="flex bg-[#0d1117] p-1.5 rounded-2xl mb-6 border border-gray-800/80 shadow-inner">
+              <button onClick={() => { setModoAuth('login'); setErrorAuth(''); }} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${modoAuth === 'login' ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-[#0d1117] shadow-md' : 'text-gray-400 hover:text-white'}`}>Iniciar Sesión</button>
+              <button onClick={() => { setModoAuth('register'); setErrorAuth(''); }} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all ${modoAuth === 'register' ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-[#0d1117] shadow-md' : 'text-gray-400 hover:text-white'}`}>Registrarse</button>
             </div>
 
-            {errorAuth && <div className="bg-red-500/10 border border-red-500/50 text-red-400 text-xs p-3 rounded-xl mb-4 text-center">{errorAuth}</div>}
+            {errorAuth && <div className="bg-red-500/10 border border-red-500/40 text-red-400 text-xs p-3.5 rounded-xl mb-4 text-center font-medium">{errorAuth}</div>}
 
             {modoAuth === 'login' ? (
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Correo Electrónico</label>
-                  <input required type="email" value={formAuth.email} onChange={(e) => setFormAuth({ ...formAuth, email: e.target.value })} className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500" placeholder="tucorreo@example.com" />
+                  <label className="text-xs text-gray-400 mb-1.5 font-medium block">Correo Electrónico</label>
+                  <input required type="email" value={formAuth.email} onChange={(e) => setFormAuth({ ...formAuth, email: e.target.value })} className="w-full bg-[#0d1117] border border-gray-800 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500 transition-colors" placeholder="tucorreo@example.com" />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Contraseña</label>
-                  <input required type="password" value={formAuth.password} onChange={(e) => setFormAuth({ ...formAuth, password: e.target.value })} className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500" placeholder="••••••••" />
+                  <label className="text-xs text-gray-400 mb-1.5 font-medium block">Contraseña</label>
+                  <input required type="password" value={formAuth.password} onChange={(e) => setFormAuth({ ...formAuth, password: e.target.value })} className="w-full bg-[#0d1117] border border-gray-800 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500 transition-colors" placeholder="••••••••" />
                   <button
                     type="button"
                     onClick={() => {
                       setMensajeRecuperacion('');
                       setMostrarModalOlvidaste(true);
                     }}
-                    className="text-xs text-green-400 hover:underline mt-1 block text-right w-full"
+                    className="text-xs text-green-400 hover:text-green-300 hover:underline mt-2 block text-right w-full font-medium"
                   >
                     ¿Olvidaste tu contraseña?
                   </button>
                 </div>
-                <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-[#121212] font-bold py-3 rounded-xl transition-colors shadow-[0_0_15px_rgba(34,197,94,0.3)] mt-2">
+                <button type="submit" className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-[#0d1117] font-extrabold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(34,197,94,0.3)] mt-3 text-sm">
                   Ingresar a FinTrack
                 </button>
               </form>
             ) : (
               <form onSubmit={handleRegistroSubmit} className="space-y-4">
                 <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Nombre Completo</label>
-                  <input required type="text" value={formAuth.nombre} onChange={(e) => setFormAuth({ ...formAuth, nombre: e.target.value })} className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500" placeholder="Juan Pérez" />
+                  <label className="text-xs text-gray-400 mb-1.5 font-medium block">Nombre Completo</label>
+                  <input required type="text" value={formAuth.nombre} onChange={(e) => setFormAuth({ ...formAuth, nombre: e.target.value })} className="w-full bg-[#0d1117] border border-gray-800 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500 transition-colors" placeholder="Juan Pérez" />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Correo Electrónico</label>
-                  <input required type="email" value={formAuth.email} onChange={(e) => setFormAuth({ ...formAuth, email: e.target.value })} className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500" placeholder="tucorreo@example.com" />
+                  <label className="text-xs text-gray-400 mb-1.5 font-medium block">Correo Electrónico</label>
+                  <input required type="email" value={formAuth.email} onChange={(e) => setFormAuth({ ...formAuth, email: e.target.value })} className="w-full bg-[#0d1117] border border-gray-800 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500 transition-colors" placeholder="tucorreo@example.com" />
                 </div>
                 <div>
-                  <label className="text-xs text-gray-400 mb-1 block">Contraseña</label>
-                  <input required type="password" value={formAuth.password} onChange={(e) => setFormAuth({ ...formAuth, password: e.target.value })} className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500" placeholder="••••••••" />
+                  <label className="text-xs text-gray-400 mb-1.5 font-medium block">Contraseña</label>
+                  <input required type="password" value={formAuth.password} onChange={(e) => setFormAuth({ ...formAuth, password: e.target.value })} className="w-full bg-[#0d1117] border border-gray-800 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500 transition-colors" placeholder="••••••••" />
                 </div>
-                <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-[#121212] font-bold py-3 rounded-xl transition-colors shadow-[0_0_15px_rgba(34,197,94,0.3)] mt-2">
+                <button type="submit" className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-[#0d1117] font-extrabold py-3.5 rounded-xl transition-all shadow-[0_0_20px_rgba(34,197,94,0.3)] mt-3 text-sm">
                   Crear Cuenta Gratis
                 </button>
               </form>
@@ -634,7 +649,7 @@ function App() {
             {/* MODAL SOLICITAR ENLACE RECUPERACIÓN */}
             {mostrarModalOlvidaste && (
               <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-                <div className="bg-[#1E1E1E] rounded-3xl border border-gray-700 shadow-2xl w-full max-w-md p-6 relative animate-fade-in">
+                <div className="bg-[#161b22] rounded-3xl border border-gray-700 shadow-2xl w-full max-w-md p-6 relative animate-fade-in">
                   <div className="flex justify-between items-center mb-4 border-b border-gray-800 pb-3">
                     <div>
                       <h2 className="text-lg font-bold text-white">Recuperar Contraseña</h2>
@@ -657,7 +672,7 @@ function App() {
                         type="email"
                         value={emailRecuperacion}
                         onChange={(e) => setEmailRecuperacion(e.target.value)}
-                        className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500"
+                        className="w-full bg-[#0d1117] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500"
                         placeholder="tucorreo@example.com"
                       />
                     </div>
@@ -1367,7 +1382,7 @@ function App() {
                       <div className={`p-3 rounded-xl border flex justify-between items-center text-xs font-mono transition-colors ${excede ? 'bg-red-500/10 border-red-500/40 text-red-400' : 'bg-[#121212] border-gray-800 text-gray-300'}`}>
                         <div>
                           <span>Costo Total: </span>
-                          <strong className={`text-sm ${excede ? 'text-red-400' : 'text-white'}`}>${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</strong>
+                          <strong className={`text-sm ${excede ? 'text-[#ef4444]' : 'text-white'}`}>${total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</strong>
                         </div>
                         {excede ? (
                           <span className="text-[10px] bg-red-500/20 px-2 py-0.5 rounded font-bold">⚠️ Excede saldo en caja</span>
@@ -1407,7 +1422,7 @@ function App() {
       {/* MODAL GLOBAL PARA ESCRIBIR LA NUEVA CONTRASEÑA */}
       {mostrarModalNuevaPassword && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[150] flex items-center justify-center p-4">
-          <div className="bg-[#1E1E1E] rounded-3xl border border-gray-700 shadow-2xl w-full max-w-md p-6 relative animate-fade-in">
+          <div className="bg-[#161b22] rounded-3xl border border-gray-700 shadow-2xl w-full max-w-md p-6 relative animate-fade-in">
             <div className="flex justify-between items-center mb-4 border-b border-gray-800 pb-3">
               <div>
                 <h2 className="text-lg font-bold text-white">Nueva Contraseña</h2>
@@ -1430,7 +1445,7 @@ function App() {
                   type="password"
                   value={nuevaPasswordInput}
                   onChange={(e) => setNuevaPasswordInput(e.target.value)}
-                  className="w-full bg-[#121212] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500"
+                  className="w-full bg-[#0d1117] border border-gray-700 rounded-xl p-3 text-white text-sm focus:outline-none focus:border-green-500"
                   placeholder="••••••••"
                 />
               </div>
