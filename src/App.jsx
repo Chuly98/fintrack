@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
+import { supabase } from './supabaseClient';
 
 const API_KEY = import.meta.env.VITE_FINNHUB_API_KEY;
 
